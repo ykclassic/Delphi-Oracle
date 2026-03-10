@@ -1,0 +1,30 @@
+# Global Bot Settings
+bot_name: "Gemini_Forex_Alpha_2026"
+version: "1.0.0"
+
+# Target Assets
+symbols:
+  - "EURUSD"
+  - "GBPUSD"
+  - "USDJPY"
+  - "XAUUSD" # Gold
+
+# Strategy Parameters
+timeframe: "1h" # Options: 15m, 1h, 4h, 1d
+regime_detection: true
+lookback_period: 100 # Candles to analyze for trend
+
+# Risk Management (Signals only)
+risk_per_trade_percent: 1.0
+default_stop_loss_atr: 1.5 # SL is 1.5x ATR
+default_take_profit_ratio: 2.0 # TP is 2x the SL distance
+
+# News Filter (Minutes)
+news_buffer_before: 30
+news_buffer_after: 15
+impact_levels: ["High", "Medium"]
+
+# Discord Integration
+discord:
+  webhook_url: "${DISCORD_WEBHOOK_URL}" # Fetched from GitHub Secrets
+  alert_role_id: "SIGNAL_SUBSCRIBER"
