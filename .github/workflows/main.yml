@@ -1,0 +1,27 @@
+name: Forex Signal Bot Runner
+
+on:
+  schedule:
+    - cron: '0 * * * 1-5' # Runs at the start of every hour, Mon-Fri
+  workflow_dispatch:      # Allows you to run it manually for testing
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Signal Bot
+        env:
+          # Your Secret Webhook URL stored in GitHub Settings -> Secrets
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python main.py
