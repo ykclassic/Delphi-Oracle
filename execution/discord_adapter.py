@@ -5,13 +5,13 @@ class DiscordNotifier:
     def __init__(self, config):
         self.webhook_url = config['discord']['webhook_url']
 
-    def send_signal(self, symbol, signal_type, risk_data):
-        """Sends a high-priority trade signal alert."""
+    def send_signal(self, symbol, signal_type, risk_data, session):
+        """Sends a high-priority trade signal alert with session info."""
         color = 3066993 if "BUY" in signal_type else 15158332
         payload = {
             "embeds": [{
                 "title": f"🚀 NEW SIGNAL: {symbol}",
-                "description": f"**Action:** {signal_type}",
+                "description": f"**Action:** {signal_type}\n**Session:** {session}",
                 "color": color,
                 "fields": [
                     {"name": "Entry", "value": f"{risk_data['entry']}", "inline": True},
@@ -23,18 +23,16 @@ class DiscordNotifier:
         }
         requests.post(self.webhook_url, json=payload)
 
-    def send_heartbeat(self, summary_list):
-        """Sends a low-priority status update to confirm the bot is active."""
-        # Grey color for heartbeat
+    def send_heartbeat(self, summary_list, session):
+        """Sends a heartbeat with the current active trading session."""
         color = 9807270 
-        
         description = "\n".join(summary_list)
         payload = {
             "embeds": [{
                 "title": "💓 System Heartbeat",
-                "description": f"**Market Scan Complete:**\n{description}",
+                "description": f"**Active Session:** {session}\n\n**Market Scan:**\n{description}",
                 "color": color,
-                "footer": {"text": f"Status: Active | Next scan in 1 hour"}
+                "footer": {"text": f"Status: Active | Time: {datetime.datetime.now().strftime('%H:%M')} UTC"}
             }]
         }
         requests.post(self.webhook_url, json=payload)
