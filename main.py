@@ -1,42 +1,51 @@
-import os
-import yaml
-import logging
-from core.data_ingestion import DataManager
-from risk_management.news_sentry import NewsSentry
-from strategies.trend_following import TrendStrategy
-from execution.discord_adapter import DiscordNotifier
+import pandas as pd
+import ta  # Technical Analysis Library
+from strategies.base_strategy import BaseStrategy
 
-def load_config():
-    with open("config/settings.yaml", "r") as f:
-        return yaml.safe_load(f)
-
-def run_bot():
-    # 1. Setup Logging & Config
-    logging.basicConfig(level=logging.INFO)
-    config = load_config()
-    
-    # 2. Initialize Modules
-    data_manager = DataManager(config)
-    news_sentry = NewsSentry(config)
-    strategy = TrendStrategy(config)
-    notifier = DiscordNotifier(config)
-
-    # 3. Execution Flow
-    for symbol in config['symbols']:
-        logging.info(f"Analyzing {symbol}...")
+class TrendStrategy(BaseStrategy):
+    def generate_signal(self, df, regime):
+        # 1. Calculate Standard Indicators
+        # Exponential Moving Averages (EMA)
+        df['ema_fast'] = ta.trend.ema_indicator(df['Close'], window=20)
+        df['ema_slow'] = ta.trend.ema_indicator(df['Close'], window=50)
         
-        # Check News first (Phase 4 Logic)
-        if news_sentry.is_market_volatile(symbol):
-            logging.warning(f"Skipping {symbol} due to high-impact news.")
-            continue
+        # RSI for overbought/oversold
+        df['rsi'] = ta.momentum.rsi(df['Close'], window=14)
+        
+        # Bollinger Bands for volatility/mean reversion
+        bb = ta.volatility.BollingerBands(df['Close'], window=20)
+        df['bb_upper'] = bb.bollinger_hband()
+        df['bb_lower'] = bb.bollinger_lband()
+        
+        # Add ATR for the Risk Guardian to use later
+        df['ATR'] = ta.volatility.average_true_range(df['High'], df['Low'], df['Close'], window=14)
+
+        # Get latest values
+        last_row = df.iloc[-1]
+        prev_row = df.iloc[-2]
+
+        # 2. Logic Selection based on Phase 2 Regime
+        
+        # REGIME 1: TRENDING (Momentum Logic)
+        if regime == 1:
+            # Bullish: Fast EMA crosses above Slow EMA + RSI > 50
+            if prev_row['ema_fast'] <= prev_row['ema_slow'] and last_row['ema_fast'] > last_row['ema_slow']:
+                if last_row['rsi'] > 50:
+                    return "BUY (Trend)"
             
-        # Get Data & Generate Signal (Phase 2 & 3)
-        df = data_manager.get_latest_data(symbol)
-        signal = strategy.check_signal(df)
-        
-        # If signal exists, send to Discord (Phase 5)
-        if signal:
-            notifier.send_signal(symbol, signal)
+            # Bearish: Fast EMA crosses below Slow EMA + RSI < 50
+            if prev_row['ema_fast'] >= prev_row['ema_slow'] and last_row['ema_fast'] < last_row['ema_slow']:
+                if last_row['rsi'] < 50:
+                    return "SELL (Trend)"
 
-if __name__ == "__main__":
-    run_bot()
+        # REGIME 0: RANGING (Mean Reversion Logic)
+        elif regime == 0:
+            # Bullish: Price touches lower Bollinger Band + RSI < 35 (Oversold)
+            if last_row['Close'] <= last_row['bb_lower'] and last_row['rsi'] < 35:
+                return "BUY (Mean Reversion)"
+            
+            # Bearish: Price touches upper Bollinger Band + RSI > 65 (Overbought)
+            if last_row['Close'] >= last_row['bb_upper'] and last_row['rsi'] > 65:
+                return "SELL (Mean Reversion)"
+
+        return None # No high-probability signal found
