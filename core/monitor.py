@@ -1,37 +1,48 @@
-import os
-import yaml
-import requests
-from core.monitor import SignalMonitor
+import pandas as pd
+import logging
+from core.data_ingestion import DataManager
 
-def load_config():
-    with open("config/settings.yaml", "r") as f:
-        config = yaml.safe_load(f)
-    webhook_env = os.getenv("DISCORD_WEBHOOK_URL")
-    if webhook_env:
-        config['discord']['webhook_url'] = webhook_env
-    return config
+class SignalMonitor:
+    def __init__(self, config):
+        self.config = config
+        self.log_path = "logs/trade_log.csv"
+        self.data_manager = DataManager(config)
 
-def run_monitor():
-    config = load_config()
-    monitor = SignalMonitor(config)
-    
-    # Check for hits
-    updates = monitor.check_outcomes()
-    
-    # Notify Discord if something happened
-    if updates and config['discord']['webhook_url']:
-        payload = {
-            "embeds": [{
-                "title": "📈 Trade Result Update",
-                "description": "\n".join(updates),
-                "color": 3447003, # Blue
-                "footer": {"text": "Delphi Oracle Monitor"}
-            }]
-        }
-        requests.post(config['discord']['webhook_url'], json=payload)
-        print(f"Sent {len(updates)} updates to Discord.")
-    else:
-        print("No trade outcomes to report.")
+    def check_outcomes(self):
+        """Analyzes active signals against current live data."""
+        try:
+            df_logs = pd.read_csv(self.log_path)
+        except FileNotFoundError:
+            return []
 
-if __name__ == "__main__":
-    run_monitor()
+        if 'Outcome' not in df_logs.columns:
+            df_logs['Outcome'] = 'Pending'
+
+        updates = []
+        for idx, row in df_logs.iterrows():
+            if row['Outcome'] != 'Pending' or row['Signal'] == 'None':
+                continue
+
+            symbol = row['Symbol']
+            # Fetch high-fidelity data for exit check
+            data = self.data_manager.get_latest_data(symbol)
+            if data is None: continue
+
+            price = data['Close'].iloc[-1]
+            high = data['High'].max()
+            low = data['Low'].min()
+            
+            outcome = "Pending"
+            if "BUY" in row['Signal']:
+                if high >= row['TP']: outcome = "✅ TAKE PROFIT"
+                elif low <= row['SL']: outcome = "❌ STOP LOSS"
+            elif "SELL" in row['Signal']:
+                if low <= row['TP']: outcome = "✅ TAKE PROFIT"
+                elif high >= row['SL']: outcome = "❌ STOP LOSS"
+
+            if outcome != "Pending":
+                df_logs.at[idx, 'Outcome'] = outcome
+                updates.append(f"**{symbol}**: {outcome} at price {price:.5f}")
+
+        df_logs.to_csv(self.log_path, index=False)
+        return updates
