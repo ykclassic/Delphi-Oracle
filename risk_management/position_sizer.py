@@ -1,38 +1,47 @@
-import pandas as pd
+import logging
 
 class PositionSizer:
     def __init__(self, config):
         self.config = config
-        self.account_balance = 10000  # Default starting balance
-        self.risk_pct = config['risk_per_trade_percent'] / 100
+        self.risk_pct = config.get('risk_per_trade_percent', 1.0)
+        # Max allowable spread as a percentage of the total target
+        self.max_spread_cost_pct = 0.15 # 15% max
 
     def calculate(self, df, symbol, signal_type):
-        """Calculates ATR-based SL, TP, and Lot Size."""
-        # ATR (Average True Range) for volatility
+        """Calculates TP/SL and checks if spread makes the trade low-quality."""
+        last_price = df['Close'].iloc[-1]
         atr = df['ATR'].iloc[-1]
-        current_price = df['Close'].iloc[-1]
         
-        # 1. Calculate Stop Loss (SL) distance based on ATR multiplier
-        sl_distance = atr * self.config['default_stop_loss_atr']
-        
+        # 1. Dynamic SL/TP based on Volatility (ATR)
         if "BUY" in signal_type:
-            sl_price = current_price - sl_distance
-            tp_price = current_price + (sl_distance * self.config['default_take_profit_ratio'])
-        else:
-            sl_price = current_price + sl_distance
-            tp_price = current_price - (sl_distance * self.config['default_take_profit_ratio'])
+            sl = last_price - (atr * self.config.get('default_stop_loss_atr', 1.5))
+            tp = last_price + (atr * self.config.get('default_take_profit_ratio', 2.0))
+        else: # SELL
+            sl = last_price + (atr * self.config.get('default_stop_loss_atr', 1.5))
+            tp = last_price - (atr * self.config.get('default_take_profit_ratio', 2.0))
 
-        # 2. Calculate Lot Size (Risk Amount / SL Distance)
-        # Note: In FX, 1 lot = 100,000 units. Calculation depends on pair (e.g., USD/JPY vs EUR/USD).
-        risk_amount = self.account_balance * self.risk_pct
+        # 2. Quality Filter: The Spread Guard
+        # In a real broker API, we'd fetch 'ask' - 'bid'. 
+        # Since we use Yahoo (delayed), we estimate spread based on symbol type.
+        estimated_spread = self._estimate_spread(symbol)
+        potential_profit = abs(tp - last_price)
         
-        # Simplified lot calculation (Assuming 0.0001 pip value for most pairs)
-        # Professional bots would use a specific 'pip_value' map here.
-        position_size = round(risk_amount / (sl_distance * 100000), 2)
-        
+        if (estimated_spread / potential_profit) > self.max_spread_cost_pct:
+            logging.warning(f"QUALITY ALERT: Spread on {symbol} is too high for this target. Aborting.")
+            return None # This tells main.py to skip the signal
+
         return {
-            "entry": round(current_price, 5),
-            "sl": round(sl_price, 5),
-            "tp": round(tp_price, 5),
-            "lots": max(position_size, 0.01) # Minimum lot is 0.01
+            "entry": round(last_price, 5),
+            "sl": round(sl, 5),
+            "tp": round(tp, 5)
         }
+
+    def _estimate_spread(self, symbol):
+        """Estimates typical 2026 spreads if live data isn't available."""
+        # Standard pips converted to price points
+        spreads = {
+            "EURUSD": 0.00012, "GBPUSD": 0.00018, 
+            "USDJPY": 0.012, "EURJPY": 0.018, "GBPJPY": 0.025,
+            "XAUUSD": 0.35
+        }
+        return spreads.get(symbol, 0.0002) # Default fallback
