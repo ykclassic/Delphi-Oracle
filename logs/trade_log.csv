@@ -840,3 +840,4 @@ Timestamp,Symbol,Regime,Signal,Entry,SL,TP,Outcome
 2026-08-17 07:47:25,USDCHF,0,BUY (Mean Reversion),0.80818,0.80674,0.81009,Pending
 2026-08-17 08:36:29,EURUSD,0,SELL (Mean Reversion),1.16131,1.16249,1.15973,Pending
 2026-08-17 08:36:30,USDCHF,0,BUY (Mean Reversion),0.80771,0.80622,0.8097,Pending
+2026-08-17 09:35:19,EURJPY,0,SELL (Mean Reversion),184.597,184.81459,184.30688,Pending
